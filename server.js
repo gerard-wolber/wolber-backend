@@ -198,10 +198,22 @@ app.get('/stats', authMiddleware, (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).send({ error: 'Accès refusé' });
 
   db.serialize(() => {
+    // Total utilisateurs
     db.get(`SELECT COUNT(*) as totalUsers FROM users`, (e1, r1) => {
+      if (e1) return res.status(500).send({ error: e1.message });
+
+      // Total élèves
       db.get(`SELECT COUNT(*) as totalStudents FROM users WHERE role='student'`, (e2, r2) => {
-        db.get(`SELECT COUNT(DISTINCT classe) as totalClasses FROM users WHERE classe IS NOT NULL`, (e3, r3) => {
+        if (e2) return res.status(500).send({ error: e2.message });
+
+        // Total classes depuis table 'classes'
+        db.get(`SELECT COUNT(*) as totalClasses FROM classes`, (e3, r3) => {
+          if (e3) return res.status(500).send({ error: e3.message });
+
+          // 5 derniers élèves inscrits
           db.all(`SELECT name, classe FROM users WHERE role='student' ORDER BY rowid DESC LIMIT 5`, (e4, r4) => {
+            if (e4) return res.status(500).send({ error: e4.message });
+
             res.send({
               totalUsers: r1?.totalUsers || 0,
               totalStudents: r2?.totalStudents || 0,
