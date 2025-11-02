@@ -193,6 +193,27 @@ app.get('/messages', authMiddleware, (req, res) => {
   });
 });
 
+// 🔹 Statistiques (Dashboard Admin)
+app.get('/stats', authMiddleware, (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).send({ error: 'Accès refusé' });
+
+  db.serialize(() => {
+    db.get(`SELECT COUNT(*) as totalUsers FROM users`, (e1, r1) => {
+      db.get(`SELECT COUNT(*) as totalStudents FROM users WHERE role='student'`, (e2, r2) => {
+        db.get(`SELECT COUNT(DISTINCT classe) as totalClasses FROM users WHERE classe IS NOT NULL`, (e3, r3) => {
+          db.all(`SELECT name, classe FROM users WHERE role='student' ORDER BY rowid DESC LIMIT 5`, (e4, r4) => {
+            res.send({
+              totalUsers: r1?.totalUsers || 0,
+              totalStudents: r2?.totalStudents || 0,
+              totalClasses: r3?.totalClasses || 0,
+              lastStudents: r4 || []
+            });
+          });
+        });
+      });
+    });
+  });
+});
 // ====================
 // Lancement serveur
 // ====================
