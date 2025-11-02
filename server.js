@@ -91,12 +91,29 @@ app.post('/register', (req, res) => {
   const { username, password, name, classe } = req.body;
   const id = uuidv4();
 
-  db.run(`INSERT INTO users(id, username, password, role, name, classe) VALUES(?,?,?,?,?,?)`,
-    [id, username, password, 'student', name, classe],
-    function(err) {
-      if (err) return res.status(400).send({ error: err.message });
-      res.send({ success: true, id });
-    });
+  db.serialize(() => {
+    // 1️⃣ Ajouter l'élève
+    db.run(`INSERT INTO users(id, username, password, role, name, classe) VALUES(?,?,?,?,?,?)`,
+      [id, username, password, 'student', name, classe],
+      function(err) {
+        if (err) return res.status(400).send({ error: err.message });
+
+        // 2️⃣ Créer la classe si elle n'existe pas
+        if (classe && classe.trim() !== '') {
+          db.get(`SELECT * FROM classes WHERE name = ?`, [classe], (err2, row) => {
+            if (err2) console.error(err2);
+            if (!row) {
+              const classId = uuidv4();
+              db.run(`INSERT INTO classes(id, name) VALUES(?,?)`, [classId, classe], (err3) => {
+                if (err3) console.error(err3);
+              });
+            }
+          });
+        }
+
+        res.send({ success: true, id });
+      });
+  });
 });
 
 // 🔹 Login
