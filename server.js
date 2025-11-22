@@ -10,10 +10,10 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// Secret JWT (à changer en prod)
+// Secret JWT
 const JWT_SECRET = 'wolber_secret';
 
-// Connexion à SQLite
+// Base SQLite
 const db = new sqlite3.Database('./wolber.db');
 
 // ====================
@@ -52,7 +52,7 @@ db.serialize(() => {
       name TEXT UNIQUE
   )`);
 
-  // Création admin principal si inexistant
+  // Création admin si inexistant
   db.get(`SELECT * FROM users WHERE username=?`, ['admin'], (err, row) => {
     if (err) console.error(err);
     else if (!row) {
@@ -92,13 +92,12 @@ app.post('/register', (req, res) => {
   const id = uuidv4();
 
   db.serialize(() => {
-    // 1️⃣ Ajouter l'élève
     db.run(`INSERT INTO users(id, username, password, role, name, classe) VALUES(?,?,?,?,?,?)`,
       [id, username, password, 'student', name, classe],
       function(err) {
         if (err) return res.status(400).send({ error: err.message });
 
-        // 2️⃣ Créer la classe si elle n'existe pas
+        // Créer la classe si nécessaire
         if (classe && classe.trim() !== '') {
           db.get(`SELECT * FROM classes WHERE name = ?`, [classe], (err2, row) => {
             if (err2) console.error(err2);
@@ -111,7 +110,7 @@ app.post('/register', (req, res) => {
           });
         }
 
-        res.send({ success: true, id });
+        res.send({ success: true, id, username, name, classe });
       });
   });
 });
@@ -124,7 +123,7 @@ app.post('/login', (req, res) => {
     if (!row) return res.status(400).send({ error: 'Identifiants incorrects' });
 
     const token = jwt.sign({ id: row.id, role: row.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.send({ ...row, token });
+    res.send({ id: row.id, username: row.username, role: row.role, name: row.name, classe: row.classe, token });
   });
 });
 
@@ -137,7 +136,7 @@ app.post('/create-admin', authMiddleware, (req, res) => {
   db.run(`INSERT INTO users(id, username, password, role, name, classe) VALUES(?,?,?,?,?,?)`,
     [id, username, password, 'admin', name, ''], function(err) {
       if (err) return res.status(400).send({ error: err.message });
-      res.send({ success: true, message: 'Nouvel administrateur créé !' });
+      res.send({ success: true, message: 'Nouvel administrateur créé !', id, username, name });
     });
 });
 
@@ -152,7 +151,7 @@ app.get('/list-users', authMiddleware, (req, res) => {
 
 // 🔹 Liste des classes
 app.get('/classes', (req, res) => {
-  db.all(`SELECT name FROM classes`, (err, rows) => {
+  db.all(`SELECT id, name FROM classes`, (err, rows) => {
     if (err) return res.status(500).send({ error: err.message });
     res.send(rows);
   });
@@ -165,7 +164,7 @@ app.post('/classes', authMiddleware, (req, res) => {
   const id = uuidv4();
   db.run(`INSERT INTO classes(id, name) VALUES(?,?)`, [id, name], function(err) {
     if (err) return res.status(400).send({ error: err.message });
-    res.send({ success: true });
+    res.send({ success: true, id, name });
   });
 });
 
@@ -185,7 +184,7 @@ app.post('/courses', authMiddleware, (req, res) => {
   db.run(`INSERT INTO courses(id, title, class, subject, type, content) VALUES(?,?,?,?,?,?)`,
     [id, title, className, subject, type, content], function(err) {
       if (err) return res.status(400).send({ error: err.message });
-      res.send({ success: true, id });
+      res.send({ success: true, id, title });
     });
 });
 
@@ -198,13 +197,22 @@ app.post('/messages', authMiddleware, (req, res) => {
     [id, req.user.id, courseId || 'none', courseTitle || 'Message libre', text, createdAt],
     function(err) {
       if (err) return res.status(400).send({ error: err.message });
-      res.send({ success: true, id });
+      res.send({ success: true, id, createdAt });
     });
 });
 
-// 🔹 Lister messages d’un utilisateur
+// 🔹 Lister messages d’un utilisateur ou d’un cours
 app.get('/messages', authMiddleware, (req, res) => {
-  db.all(`SELECT * FROM messages WHERE fromId=? ORDER BY createdAt DESC`, [req.user.id], (err, rows) => {
+  const courseId = req.query.courseId;
+  let query = `SELECT * FROM messages WHERE fromId=? ORDER BY createdAt DESC`;
+  let params = [req.user.id];
+
+  if (courseId) {
+    query = `SELECT * FROM messages WHERE courseId=? ORDER BY createdAt DESC`;
+    params = [courseId];
+  }
+
+  db.all(query, params, (err, rows) => {
     if (err) return res.status(500).send({ error: err.message });
     res.send(rows);
   });
@@ -215,13 +223,9 @@ app.get('/stats', authMiddleware, (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).send({ error: 'Accès refusé' });
 
   db.serialize(() => {
-    // Total utilisateurs
     db.get(`SELECT COUNT(*) as totalUsers FROM users`, (e1, r1) => {
-      // Total élèves
       db.get(`SELECT COUNT(*) as totalStudents FROM users WHERE role='student'`, (e2, r2) => {
-        // Total classes distinctes
         db.get(`SELECT COUNT(*) as totalClasses FROM classes`, (e3, r3) => {
-          // Derniers élèves inscrits
           db.all(`SELECT name, classe FROM users WHERE role='student' ORDER BY rowid DESC LIMIT 5`, (e4, r4) => {
             res.send({
               totalUsers: r1?.totalUsers || 0,
@@ -235,6 +239,7 @@ app.get('/stats', authMiddleware, (req, res) => {
     });
   });
 });
+
 // ====================
 // Lancement serveur
 // ====================
