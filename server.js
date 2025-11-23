@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 app.use(bodyParser.json());
 
 // --- Configuration et Connexion PostgreSQL ---
-const SECRET_KEY = process.env.JWT_SECRET || 'votre_cle_secrete_tres_sure'; // À définir dans les variables d'environnement Render!
+const SECRET_KEY = process.env.NEW_SECRET || 'votre_cle_secrete_tres_sure'; // À définir dans les variables d'environnement Render!
 const DB_URL = process.env.DATABASE_URL;
 
 if (!DB_URL) {
